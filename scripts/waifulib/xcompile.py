@@ -446,7 +446,7 @@ class WiiU:
 		self.ctx = ctx
 
 		for i in NSWITCH_ENVVARS:
-			self.dkp_dir = "C:\devkitPro"
+			self.dkp_dir = os.getenv(i)
 			if self.dkp_dir != None:
 				break
 		else:
@@ -681,10 +681,7 @@ def configure(conf):
 		conf.environ['CC'] = wiiu.cc()
 		conf.environ['CXX'] = wiiu.cxx()
 		conf.environ['STRIP'] = wiiu.strip()
-		conf.env.CFLAGS += wiiu.cflags()
-		conf.env.CXXFLAGS += wiiu.cflags(True)
-		conf.env.LINKFLAGS += wiiu.linkflags()
-		conf.env.LDFLAGS += wiiu.ldflags()
+		conf.env.PKGCONFIG = wiiu.pkgconfig()
 		conf.env.DEST_OS = 'wiiu'
 
 	conf.env.MAGX = conf.options.MAGX
