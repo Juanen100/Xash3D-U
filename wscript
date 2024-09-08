@@ -99,12 +99,6 @@ SUBDIRS = [
 
 REFDLLS = [
 	RefDll('soft', True),
-	RefDll('gl', True),
-	RefDll('gles1', False, 'NANOGL'),
-	RefDll('gles2', False, 'GLWES'),
-	RefDll('gl4es', False),
-	RefDll('gles3compat', False),
-	RefDll('null', False),
 ]
 
 def options(opt):
@@ -188,6 +182,9 @@ def configure(conf):
 	if conf.options.PSVITA:
 		conf.load('psvita')
 
+	if conf.options.WIIU:
+		conf.load('wiiu')
+
 	# HACKHACK: override msvc DEST_CPU value by something that we understand
 	if conf.env.DEST_CPU == 'amd64':
 		conf.env.DEST_CPU = 'x86_64'
@@ -236,6 +233,10 @@ def configure(conf):
 		conf.options.USE_STBTT        = True
 		# we'll specify -fPIC by hand for shared libraries only
 		enforce_pic                   = False
+	elif conf.options.DEST_OS == "wiiu":
+		conf.options.NO_VGUI          = True
+		conf.options.SOFT			  = True
+		conf.options.GL               = False
 
 	if conf.env.STATIC_LINKING:
 		enforce_pic = False # PIC may break full static builds

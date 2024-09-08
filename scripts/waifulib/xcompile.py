@@ -30,7 +30,7 @@ ANDROID_NDK_API_MIN = { 10: 3, 19: 16, 20: 16, 23: 16, 25: 19 } # minimal API le
 ANDROID_STPCPY_API_MIN = 21 # stpcpy() introduced in SDK 21
 ANDROID_64BIT_API_MIN = 21 # minimal API level that supports 64-bit targets
 
-NSWITCH_ENVVARS = ['DEVKITPRO']
+NSWITCH_ENVVARS = ['DEVKITPRO'] #Also works for Wii U
 
 PSVITA_ENVVARS = ['VITASDK']
 
@@ -434,6 +434,88 @@ class NintendoSwitch:
 		ldflags = [] # ['-lm', '-lstdc++']
 		return ldflags
 
+class WiiU:
+	ctx          = None # waf context
+	arch         = "ppc"
+	dkp_dir      = None
+	portlibs_dir = None
+	dka64_dir    = None #yes, it's copy pasted but I'm not changing all var names so pretend this is dkppc
+	libnx_dir    = None
+
+	def __init__(self, ctx):
+		self.ctx = ctx
+
+		for i in NSWITCH_ENVVARS:
+			self.dkp_dir = "C:\devkitPro"
+			if self.dkp_dir != None:
+				break
+		else:
+			ctx.fatal('Set %s environment variable pointing to the DEVKITPRO home!' %
+				' or '.join(NSWITCH_ENVVARS))
+
+		self.dkp_dir = os.path.abspath(self.dkp_dir)
+
+		self.dka64_dir = os.path.join(self.dkp_dir, 'devkitPPC')
+		if not os.path.exists(self.dka64_dir):
+			ctx.fatal('devkitPPC not found in `%s`. Install devkitPPC!' % self.dka64_dir)
+
+		self.libnx_dir = os.path.join(self.dkp_dir, 'wut')
+		if not os.path.exists(self.libnx_dir):
+			ctx.fatal('wut not found in `%s`. Install wut!' % self.libnx_dir)
+
+		self.portlibs_dir = os.path.join(self.dkp_dir, 'portlibs', 'wiiu')
+		if not os.path.exists(self.portlibs_dir):
+			ctx.fatal('No Wii U libraries found in `%s`!' % self.portlibs_dir)
+
+	def gen_toolchain_prefix(self):
+		return 'powerpc-eabi-'
+
+	def gen_gcc_toolchain_path(self):
+		return os.path.join(self.dka64_dir, 'bin', self.gen_toolchain_prefix())
+
+	def cc(self):
+		return self.gen_gcc_toolchain_path() + 'gcc'
+
+	def cxx(self):
+		return self.gen_gcc_toolchain_path() + 'g++'
+
+	def strip(self):
+		return self.gen_gcc_toolchain_path() + 'strip'
+
+	def pkgconfig(self):
+		# counter-intuitively, this motherfucker is in $DEVKITPRO/portlibs/wiiu/bin
+		return os.path.join(self.portlibs_dir, 'bin', self.gen_toolchain_prefix() + 'pkg-config')
+
+	def cflags(self, cxx = False):
+		cflags = []
+		# arch flags
+		cflags += ['-D__WIIU__', '-march=armv8-a+crc+crypto', '-mtune=cortex-a57', '-mtp=soft', '-ftls-model=local-exec', '-fPIE']
+		# help the linker out
+		cflags += ['-ffunction-sections', '-fdata-sections']
+		# base include dirs
+		cflags += ['-isystem %s/include' % self.libnx_dir, '-I%s/include' % self.portlibs_dir]
+		# the game wants GNU extensions
+		if cxx:
+			cflags += ['-std=gnu++17', '-D_GNU_SOURCE']
+		else:
+			cflags += ['-std=gnu11', '-D_GNU_SOURCE']
+		return cflags
+
+	# they go before object list
+	def linkflags(self):
+		linkflags = ['-fPIE', '-specs=%s/switch.specs' % self.libnx_dir]
+		# libsolder only supports sysv hashes and we need to build everything with -rdynamic
+		linkflags += ['-Wl,--hash-style=sysv', '-rdynamic']
+		# avoid pulling in and exposing mesa's internals, that crashes it for some god forsaken reason
+		linkflags += ['-Wl,--exclude-libs=libglapi.a', '-Wl,--exclude-libs=libdrm_nouveau.a']
+		return linkflags
+
+	def ldflags(self):
+		# NOTE: shared libraries should be built without standard libs, so that they could import their contents from the NRO,
+		# but executables, including the SDL2 sanity check, will generally require libstdc++ and libm, which we will add manually
+		ldflags = [] # ['-lm', '-lstdc++']
+		return ldflags
+
 class PSVita:
 	ctx          = None # waf context
 	arch         ='armeabi-v7a-hard'
@@ -510,6 +592,8 @@ def options(opt):
 		help='enable building for Nintendo Switch [default: %(default)s]')
 	xc.add_option('--psvita', action='store_true', dest='PSVITA', default = False,
 		help='enable building for PlayStation Vita [default: %(default)s]')
+	xc.add_option('--wiiu', action='store_true', dest='WIIU', default = False,
+		help='enable building for Nintendo Wii U [default: %(default)s]')
 	xc.add_option('--sailfish', action='store', dest='SAILFISH', default = None,
 		help='enable building for Sailfish/Aurora')
 
@@ -592,6 +676,16 @@ def configure(conf):
 		conf.env.LIB_M = ['m']
 		conf.env.VRTLD = ['vrtld']
 		conf.env.DEST_OS = 'psvita'
+	elif conf.options.WIIU:
+		conf.wiiu = wiiu = WiiU(conf)
+		conf.environ['CC'] = wiiu.cc()
+		conf.environ['CXX'] = wiiu.cxx()
+		conf.environ['STRIP'] = wiiu.strip()
+		conf.env.CFLAGS += wiiu.cflags()
+		conf.env.CXXFLAGS += wiiu.cflags(True)
+		conf.env.LINKFLAGS += wiiu.linkflags()
+		conf.env.LDFLAGS += wiiu.ldflags()
+		conf.env.DEST_OS = 'wiiu'
 
 	conf.env.MAGX = conf.options.MAGX
 	conf.env.MSVC_WINE = conf.options.MSVC_WINE
